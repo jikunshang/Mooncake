@@ -230,6 +230,18 @@ int DistributedObjectStore::allocateSlices(std::vector<Slice> &slices,
     return 0;
 }
 
+int DistributedObjectStore::reuseSlices(std::vector<Slice> &slices,
+    char* value) {
+    uint64_t offset = 0;
+    while (offset < value.size()) {
+        auto chunk_size = std::min(value.size() - offset, kMaxSliceSize);
+        char* ptr = value + offset
+        slices.emplace_back(Slice{ptr, chunk_size});
+        offset += chunk_size;
+    }
+    return 0;
+}
+
 int DistributedObjectStore::allocateSlices(std::vector<Slice> &slices,
                                            std::span<const char> value) {
     uint64_t offset = 0;
@@ -345,6 +357,34 @@ int DistributedObjectStore::tearDownAll() {
     protocol = "";
     return 0;
 }
+
+int DistributedObjectStore::put(const std::string &key, int64_t ptr, int32_t size) {
+    py::gil_scoped_release release_gil;
+    if (!client_) {
+        LOG(ERROR) << "Client is not initialized";
+        return 1;
+    }
+
+    char* data = static_cast<char*>(ptr);
+    // std::string_view value(data, size);
+    SliceGuard slices(*this);
+    int ret = reuseSlices(slices.slices(), data);
+    if (ret) {
+        LOG(ERROR) << "Failed to allocate slices for put operation";
+        return ret;
+    }
+    ReplicateConfig config;
+    config.replica_num = 1;  // TODO: Make configurable
+
+    ErrorCode error_code = client_->Put(key, slices.slices(), config);
+    if (error_code != ErrorCode::OK) {
+        LOG(ERROR) << "Put operation failed with error: "
+                   << toString(error_code);
+        return toInt(error_code);
+    }
+    return 0; 
+}
+
 
 int DistributedObjectStore::put(const std::string &key,
                                 std::span<const char> value) {
@@ -632,6 +672,8 @@ PYBIND11_MODULE(store, m) {
         .def(py::init<>())
         .def("setup", &DistributedObjectStore::setup)
         .def("init_all", &DistributedObjectStore::initAll)
+        .def("put", py::overload_cast<const std::string&,
+            int64_t>(&DistributedObjectStore::put))
         .def("get", &DistributedObjectStore::get)
         .def("get_buffer", &DistributedObjectStore::get_buffer,
              py::call_guard<py::gil_scoped_release>(),
