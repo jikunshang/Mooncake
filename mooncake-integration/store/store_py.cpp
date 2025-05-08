@@ -235,7 +235,7 @@ int DistributedObjectStore::reuseSlices(std::vector<Slice> &slices,
     uint64_t offset = 0;
     while (offset < size) {
         auto chunk_size = std::min(size - offset, kMaxSliceSize);
-        char* ptr = value + offset
+        char* ptr = value + offset;
         slices.emplace_back(Slice{ptr, chunk_size});
         offset += chunk_size;
     }
@@ -365,7 +365,7 @@ int DistributedObjectStore::put_unsafe(const std::string &key, int64_t ptr, int3
         return 1;
     }
 
-    char* data = static_cast<char*>(ptr);
+    char* data = (char*)(ptr);
     // std::string_view value(data, size);
     SliceGuard slices(*this);
     int ret = reuseSlices(slices.slices(), data, size);
