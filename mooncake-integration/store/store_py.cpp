@@ -358,7 +358,7 @@ int DistributedObjectStore::tearDownAll() {
     return 0;
 }
 
-int DistributedObjectStore::put(const std::string &key, int64_t ptr, int32_t size) {
+int DistributedObjectStore::put_unsafe(const std::string &key, int64_t ptr, int32_t size) {
     py::gil_scoped_release release_gil;
     if (!client_) {
         LOG(ERROR) << "Client is not initialized";
@@ -672,8 +672,7 @@ PYBIND11_MODULE(store, m) {
         .def(py::init<>())
         .def("setup", &DistributedObjectStore::setup)
         .def("init_all", &DistributedObjectStore::initAll)
-        .def("put", py::overload_cast<const std::string&,
-            int64_t>(&DistributedObjectStore::put))
+        .def("put_unsafe", &DistributedObjectStore::put_unsafe)
         .def("get", &DistributedObjectStore::get)
         .def("get_buffer", &DistributedObjectStore::get_buffer,
              py::call_guard<py::gil_scoped_release>(),

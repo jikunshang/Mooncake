@@ -113,7 +113,7 @@ class DistributedObjectStore {
     int put(const std::string &key, const std::string &value);
     int put(const std::string &key, pybind11::buffer value);
     int put(const std::string &key, std::span<const char> value);
-    int put(const std::string &key, int64_t ptr, int32_t size);
+    int put_unsafe(const std::string &key, int64_t ptr, int32_t size);
     int put_parts(const std::string &key,
                   std::vector<std::span<const char>> values);
 
