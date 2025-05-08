@@ -231,10 +231,10 @@ int DistributedObjectStore::allocateSlices(std::vector<Slice> &slices,
 }
 
 int DistributedObjectStore::reuseSlices(std::vector<Slice> &slices,
-    char* value) {
+    char* value, size_t size) {
     uint64_t offset = 0;
-    while (offset < value.size()) {
-        auto chunk_size = std::min(value.size() - offset, kMaxSliceSize);
+    while (offset < size) {
+        auto chunk_size = std::min(size - offset, kMaxSliceSize);
         char* ptr = value + offset
         slices.emplace_back(Slice{ptr, chunk_size});
         offset += chunk_size;
@@ -368,7 +368,7 @@ int DistributedObjectStore::put(const std::string &key, int64_t ptr, int32_t siz
     char* data = static_cast<char*>(ptr);
     // std::string_view value(data, size);
     SliceGuard slices(*this);
-    int ret = reuseSlices(slices.slices(), data);
+    int ret = reuseSlices(slices.slices(), data, size);
     if (ret) {
         LOG(ERROR) << "Failed to allocate slices for put operation";
         return ret;

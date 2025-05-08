@@ -156,7 +156,7 @@ class DistributedObjectStore {
 
     int allocateSlices(std::vector<mooncake::Slice> &slices,
                        std::span<const char> value);
-    int reuseSlices(std::vector<mooncake::Slice> &slices, char* value);
+    int reuseSlices(std::vector<mooncake::Slice> &slices, char* value, size_t size);
     int allocateSlicesPacked(std::vector<mooncake::Slice> &slices,
                              const std::vector<std::span<const char>> &parts);
 
