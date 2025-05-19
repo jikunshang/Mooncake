@@ -265,9 +265,11 @@ std::shared_ptr<RdmaEndPoint> RdmaContext::endpoint(
     auto endpoint = endpoint_store_->getEndpoint(peer_nic_path);
     if (endpoint) {
         return endpoint;
+    } else {
+    	endpoint = endpoint_store_->insertEndpoint(peer_nic_path, this);
+	return endpoint;
     }
 
-    endpoint = endpoint_store_->insertEndpoint(peer_nic_path, this);
     endpoint_store_->reclaimEndpoint();
     return endpoint;
 }
