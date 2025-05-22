@@ -541,7 +541,7 @@ struct SocketHandShakePlugin : public HandShakePlugin {
             }
         }
 
-        if (listen(listen_fd_, 5)) {
+        if (listen(listen_fd_, 100)) {
             PLOG(ERROR) << "SocketHandShakePlugin: listen()";
             closeListen();
             return ERR_SOCKET;
