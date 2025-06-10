@@ -3,6 +3,7 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <pybind11/gil.h>  // For GIL management
 
 #include <cstdlib>  // for atexit
 #include <random>
@@ -10,6 +11,7 @@
 #include "types.h"
 
 using namespace mooncake;
+namespace py = pybind11;
 
 // ResourceTracker implementation using singleton pattern
 ResourceTracker &ResourceTracker::getInstance() {
@@ -305,25 +307,29 @@ int DistributedObjectStore::put_unsafe(const std::string &key, int64_t ptr, uint
         LOG(ERROR) << "Client is not initialized";
         return 1;
     }
+    {
+        py::gil_scoped_release release_gil;
+        char* data = (char*)(ptr);
+        std::string_view value(data, size);
+        std::vector<Slice> slices;
+        int ret = allocateSlices(slices, value);
+        if (ret) {
+            LOG(ERROR) << "Failed to allocate slices for put operation";
+            return ret;
+        }
+        ReplicateConfig config;
+        config.replica_num = 1;  // TODO: Make configurable
 
-    char* data = (char*)(ptr);
-    std::string_view value(data, size);
-    std::vector<Slice> slices;
-    int ret = allocateSlices(slices, value);
-    if (ret) {
-        LOG(ERROR) << "Failed to allocate slices for put operation";
-        return ret;
+        ErrorCode error_code = client_->Put(std::string(key), slices, config);
+        if (error_code != ErrorCode::OK) {
+            LOG(ERROR) << "Put operation failed with error: "
+                       << toString(error_code);
+            return toInt(error_code);
+        }
+        freeSlices(slices);
     }
-    ReplicateConfig config;
-    config.replica_num = 1;  // TODO: Make configurable
-
-    ErrorCode error_code = client_->Put(std::string(key), slices, config);
-    if (error_code != ErrorCode::OK) {
-        LOG(ERROR) << "Put operation failed with error: "
-                   << toString(error_code);
-        return toInt(error_code);
-    }
-    freeSlices(slices);
+    // Release GIL before returning
+    py::gil_scoped_acquire acquire_gil;
     return 0; 
 }
 
@@ -354,32 +360,47 @@ pybind11::bytes DistributedObjectStore::get(const std::string &key) {
     std::vector<Slice> slices;
 
     const auto kNullString = pybind11::bytes("\0", 0);
-    ErrorCode error_code = client_->Query(key, object_info);
-    if (error_code != ErrorCode::OK) return kNullString;
+    {
+        py::gil_scoped_release release_gil;
 
-    uint64_t str_length = 0;
-    int ret = allocateSlices(slices, object_info, str_length);
-    if (ret) return kNullString;
+        ErrorCode error_code = client_->Query(key, object_info);
+        if (error_code != ErrorCode::OK) {
+            py::gil_scoped_acquire acquire_gil;
+            return kNullString;
+        }
 
-    error_code = client_->Get(key, object_info, slices);
-    if (error_code != ErrorCode::OK) {
+        uint64_t str_length = 0;
+        int ret = allocateSlices(slices, object_info, str_length);
+        if (ret) {
+            py::gil_scoped_acquire acquire_gil;
+            return kNullString;
+        }
+        error_code = client_->Get(key, object_info, slices);
+        if (error_code != ErrorCode::OK) {
+            freeSlices(slices);
+            py::gil_scoped_acquire acquire_gil;
+            return kNullString;
+        }
+
+        if (slices.size() == 1 && slices[0].size == str_length) {
+            py::gil_scoped_acquire acquire_gil;
+            auto result = pybind11::bytes((char *)slices[0].ptr, str_length);
+            freeSlices(slices);
+            return result;
+        }
+
+        const char *str = exportSlices(slices, str_length);
         freeSlices(slices);
-        return kNullString;
-    }
+        if (!str) {
+            py::gil_scoped_acquire acquire_gil;
+            return kNullString;
+        }
+        py::gil_scoped_acquire acquire_gil;
 
-    if (slices.size() == 1 && slices[0].size == str_length) {
-        auto result = pybind11::bytes((char *)slices[0].ptr, str_length);
-        freeSlices(slices);
+        pybind11::bytes result(str, str_length);
+        delete[] str;
         return result;
     }
-
-    const char *str = exportSlices(slices, str_length);
-    freeSlices(slices);
-    if (!str) return kNullString;
-
-    pybind11::bytes result(str, str_length);
-    delete[] str;
-    return result;
 }
 
 int DistributedObjectStore::remove(const std::string &key) {
