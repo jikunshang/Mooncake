@@ -414,11 +414,13 @@ int DistributedObjectStore::remove(const std::string &key) {
 }
 
 int DistributedObjectStore::isExist(const std::string &key) {
+    py::gil_scoped_release release_gil;
     if (!client_) {
         LOG(ERROR) << "Client is not initialized";
         return -1;
     }
     ErrorCode err = client_->IsExist(key);
+    py::gil_scoped_acquire acquire_gil;
     if (err == ErrorCode::OK) return 1;                // Yes
     if (err == ErrorCode::OBJECT_NOT_FOUND) return 0;  // No
     return toInt(err);                                 // Error
